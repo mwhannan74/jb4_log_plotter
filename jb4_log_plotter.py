@@ -87,10 +87,11 @@ def pick_csv_file(initial_dir: Path) -> Path:
         title="Select JB4 CSV Log",
         initialdir=str(initial_dir),
         filetypes=[
-            ("CSV files", "*.csv"),
+            ("JB4 CSV files", "*.csv *.CSV"),  # accept both extensions
             ("All files", "*.*"),
         ],
     )
+
 
     # Destroy the hidden root window to avoid leaving a hanging Tk process.
     root.destroy()
@@ -298,6 +299,25 @@ def main() -> None:
         for ax in axes
     ]
 
+    # NEW: A value label per subplot that will show the Y-value at the marker.
+    # We draw these as text objects and update them on mouse movement.
+    #
+    # Note: We keep these in "data coordinates" so the label naturally moves with the dot.
+    # We also use a small bounding box so the text remains readable over the plot lines.
+    value_labels = [
+        ax.text(
+            0.0,
+            0.0,
+            "",
+            visible=False,
+            fontsize=9,
+            ha="left",
+            va="center",
+            bbox=dict(boxstyle="round,pad=0.2", alpha=0.7),
+        )
+        for ax in axes
+    ]
+
     # A small info readout in the bottom-left of the figure.
     # You can expand this later to show all channel values at the cursor.
     info_text = fig.text(0.01, 0.01, "", ha="left", va="bottom")
@@ -319,6 +339,8 @@ def main() -> None:
                 vl.set_visible(False)
             for mk in markers:
                 mk.set_visible(False)
+            for lbl in value_labels:
+                lbl.set_visible(False)
             info_text.set_text("")
             fig.canvas.draw_idle()
             return
@@ -327,15 +349,36 @@ def main() -> None:
         idx = nearest_index(x, t)
         x_snap = t[idx]
 
+        # A small horizontal offset so the value label does not sit directly on the vertical line.
+        # We scale this by the current x-axis span so it behaves reasonably at different zoom levels.
+        x0, x1 = axes[0].get_xlim()
+        x_offset = 0.01 * (x1 - x0)
+
         # Move the vertical line in every subplot
         for vl in vlines:
             vl.set_xdata([x_snap, x_snap])
             vl.set_visible(True)
 
-        # Move each marker to the (time, value) point for that subplot
-        for mk, y in zip(markers, y_series):
-            mk.set_data([x_snap], [y[idx]])
+        # Move each marker to the (time, value) point for that subplot,
+        # and update the corresponding text label to display the Y-value.
+        for (mk, y, lbl, (friendly_name, _y_label, _y_lim)) in zip(markers, y_series, value_labels, PLOTS):
+            y_val = y[idx]
+
+            mk.set_data([x_snap], [y_val])
             mk.set_visible(True)
+
+            # Update label text and location (slightly to the right of the cursor line)
+            # Use compact formatting:
+            # - Integers (like RPM) will display without decimals if they are close to ints
+            # - Otherwise, display with 2 decimals
+            if np.isfinite(y_val) and abs(y_val - round(y_val)) < 1e-9:
+                text = f"{friendly_name}: {int(round(y_val))}"
+            else:
+                text = f"{friendly_name}: {y_val:.2f}"
+
+            lbl.set_text(text)
+            lbl.set_position((x_snap + x_offset, y_val))
+            lbl.set_visible(True)
 
         info_text.set_text(f"t = {x_snap:.2f} s   (index {idx})")
         fig.canvas.draw_idle()  # request a redraw without blocking
@@ -348,6 +391,8 @@ def main() -> None:
             vl.set_visible(False)
         for mk in markers:
             mk.set_visible(False)
+        for lbl in value_labels:
+            lbl.set_visible(False)
         info_text.set_text("")
         fig.canvas.draw_idle()
 
