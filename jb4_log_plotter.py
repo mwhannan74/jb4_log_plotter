@@ -11,11 +11,15 @@ What this script does:
 4) Adds a synchronized "cursor" (vertical line + markers) that follows your mouse
    across all plots and snaps to the nearest sample.
 
-Dependencies:
-  pip install pandas matplotlib pyqt5
-
+Virutal Environment
+  python3 -m venv venv
 Windows venv:
   .\.venv\Scripts\activate.bat
+Linux venv
+  source venv/bin/activate
+
+Dependencies:
+  pip install pandas matplotlib pyqt5
 """
 
 from __future__ import annotations
@@ -41,13 +45,13 @@ import matplotlib.pyplot as plt
 # - Speed may show up as "Speed" or "GPS Speed".
 #   We handle these differences in resolve_columns().
 PLOTS = [
-    ("RPM", "RPM", (0, 6500)),
-    ("Boost", "Boost (psi)", (0, 20)),
-    ("Pedal", "Pedal (%)", (0, 100)),
-    ("Throttle", "Throttle (%)", (0, 100)),
-    ("AFR", "AFR", (0, 20)),
-    ("IAT", "IAT (°F)", (0, 120)),
-    ("Speed", "Speed (mph)", (0, 100)),
+    ("RPM", "RPM", (0, 7000)),
+    ("Boost", "Boost (psi)", (0, 25)),
+    ("Pedal", "Pedal (%)", (0, 110)),
+    ("Throttle", "Throttle (%)", (0, 110)),
+    ("AFR", "AFR", (10, 22)),
+    ("IAT", "IAT (°F)", (0, 160)),
+    ("Speed", "Speed (mph)", (0, 120)),
 ]
 
 
