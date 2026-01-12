@@ -1,0 +1,61 @@
+# ----------------------------
+# Python bytecode / caches
+# ----------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ----------------------------
+# Virtual environments
+# ----------------------------
+.venv/
+venv/
+env/
+ENV/
+pip-wheel-metadata/
+
+# ----------------------------
+# Packaging / build outputs
+# ----------------------------
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
+pip-log.txt
+
+# ----------------------------
+# Test / coverage / tooling
+# ----------------------------
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+.pytype/
+.pyre/
+
+# ----------------------------
+# Jupyter / notebooks
+# ----------------------------
+.ipynb_checkpoints/
+
+# ----------------------------
+# IDE / editor
+# ----------------------------
+.vscode/
+.idea/
+
+# ----------------------------
+# OS / misc
+# ----------------------------
+.DS_Store
+Thumbs.db
+
+# ----------------------------
+# JB4 logs / data files
+# ----------------------------
+*.csv
+*.CSV

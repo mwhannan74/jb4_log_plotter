@@ -1,0 +1,360 @@
+"""
+JB4 log plotter (Kia Stinger GT)
+
+What this script does:
+1) Opens a simple file dialog so you can pick a JB4 CSV log file.
+2) JB4 CSVs often contain metadata "blocks" before the actual data table.
+   The real data header is the line that starts with "timestamp".
+   We scan the file to find that line and tell pandas to treat it as the header.
+3) Plots selected channels versus time using stacked subplots (sharex=True),
+   so zoom/pan on one subplot applies to all subplots.
+4) Adds a synchronized "cursor" (vertical line + markers) that follows your mouse
+   across all plots and snaps to the nearest sample.
+
+Dependencies:
+  pip install pandas matplotlib pyqt5
+
+Windows venv:
+  .\.venv\Scripts\activate.bat
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+# IMPORTANT: Matplotlib "backend" must be selected before importing pyplot.
+# "QtAgg" provides good interactive performance on Windows (zoom/pan toolbar, etc.).
+import matplotlib
+matplotlib.use("QtAgg")
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+# -----------------------------------------------------------------------------
+# Plot configuration
+# -----------------------------------------------------------------------------
+# Each tuple: (Friendly name we want to plot, y-axis label, y-axis limits)
+# Notes:
+# - Your JB4 log may store Boost as either "Boost" or "ECU Boost".
+# - Speed may show up as "Speed" or "GPS Speed".
+#   We handle these differences in resolve_columns().
+PLOTS = [
+    ("RPM", "RPM", (0, 6500)),
+    ("Boost", "Boost (psi)", (0, 20)),
+    ("Pedal", "Pedal (%)", (0, 100)),
+    ("Throttle", "Throttle (%)", (0, 100)),
+    ("AFR", "AFR", (0, 20)),
+    ("IAT", "IAT (°F)", (0, 120)),
+    ("Speed", "Speed (mph)", (0, 100)),
+]
+
+
+# -----------------------------------------------------------------------------
+# File picker
+# -----------------------------------------------------------------------------
+def pick_csv_file(initial_dir: Path) -> Path:
+    """
+    Open a basic OS file dialog so you can select the CSV log file.
+
+    Why Tkinter?
+    - It's part of the Python standard library.
+    - It's "good enough" for a simple file selection window.
+
+    Returns:
+        Path to the selected file.
+
+    Behavior:
+        If user cancels, we exit the script cleanly by raising SystemExit.
+    """
+    import tkinter as tk
+    from tkinter import filedialog
+
+    # Create a hidden Tk root window. We do not want a full GUI app,
+    # just a file picker dialog.
+    root = tk.Tk()
+    root.withdraw()
+
+    # Make sure the dialog appears in front of other windows.
+    root.attributes("-topmost", True)
+
+    filename = filedialog.askopenfilename(
+        title="Select JB4 CSV Log",
+        initialdir=str(initial_dir),
+        filetypes=[
+            ("CSV files", "*.csv"),
+            ("All files", "*.*"),
+        ],
+    )
+
+    # Destroy the hidden root window to avoid leaving a hanging Tk process.
+    root.destroy()
+
+    if not filename:
+        # User hit cancel (empty string returned).
+        raise SystemExit("No file selected. Exiting.")
+
+    return Path(filename)
+
+
+# -----------------------------------------------------------------------------
+# CSV parsing: skip metadata blocks and start at the header row "timestamp,..."
+# -----------------------------------------------------------------------------
+def find_header_line(csv_path: Path, header_startswith: str = "timestamp") -> int:
+    """
+    JB4 logs often start with metadata lines, then the "real" CSV header appears.
+
+    We scan the file (line-by-line) until we find a line whose beginning is:
+        "timestamp"
+
+    Returns:
+        0-based line index of the header row. This index can be passed to pandas
+        read_csv(..., header=<index>).
+
+    Example:
+        If the file's header row is the 5th line in the file, return 4.
+    """
+    with csv_path.open("r", encoding="utf-8", errors="replace") as f:
+        for i, line in enumerate(f):
+            # lstrip() removes leading whitespace; helpful if file has odd formatting.
+            if line.lstrip().startswith(header_startswith):
+                return i
+
+    raise ValueError(f'Could not find a header line starting with "{header_startswith}" in {csv_path}')
+
+
+def read_jb4_csv(csv_path: Path) -> pd.DataFrame:
+    """
+    Read a JB4 CSV file into a DataFrame, ignoring metadata lines before the header.
+
+    Steps:
+    1) Find the header line index (row that begins with "timestamp").
+    2) Read the CSV with pandas, using that row as the header.
+    3) Clean column names (strip whitespace and normalize spacing).
+    4) Convert timestamp to numeric and drop rows that don't parse.
+
+    Returns:
+        pandas DataFrame where df["timestamp"] is numeric seconds (float).
+    """
+    header_line = find_header_line(csv_path, header_startswith="timestamp")
+
+    # pandas will treat the specified line as the header row.
+    df = pd.read_csv(csv_path, header=header_line)
+
+    # Some logs have trailing/leading spaces in column names or multiple spaces.
+    df.columns = (
+        df.columns.astype(str)
+        .str.strip()
+        .str.replace(r"\s+", " ", regex=True)
+    )
+
+    # Require timestamp column
+    if "timestamp" not in df.columns:
+        raise ValueError(f'Expected a "timestamp" column, found: {list(df.columns)}')
+
+    # Convert timestamp to numeric; invalid parsing becomes NaN
+    df["timestamp"] = pd.to_numeric(df["timestamp"], errors="coerce")
+
+    # Drop any rows without a valid timestamp
+    df = df.dropna(subset=["timestamp"]).reset_index(drop=True)
+
+    return df
+
+
+def resolve_columns(df: pd.DataFrame) -> dict[str, str]:
+    """
+    Different JB4 logs can have slightly different column names.
+
+    This function maps the "friendly" names used in PLOTS to the actual column
+    names present in the file.
+
+    Example:
+        If file has "ECU Boost" but not "Boost", we map friendly "Boost" -> "ECU Boost".
+    """
+    available = set(df.columns)
+
+    # Start with columns we expect to exist as-is
+    mapping: dict[str, str] = {
+        "RPM": "RPM",
+        "Pedal": "Pedal",
+        "Throttle": "Throttle",
+        "AFR": "AFR",
+        "IAT": "IAT",
+    }
+
+    # Boost can be either "Boost" or "ECU Boost"
+    if "Boost" in available:
+        mapping["Boost"] = "Boost"
+    elif "ECU Boost" in available:
+        mapping["Boost"] = "ECU Boost"
+    else:
+        raise ValueError('Could not find "Boost" or "ECU Boost" column.')
+
+    # Speed can be either "Speed" or "GPS Speed"
+    if "Speed" in available:
+        mapping["Speed"] = "Speed"
+    elif "GPS Speed" in available:
+        mapping["Speed"] = "GPS Speed"
+    else:
+        raise ValueError('Could not find "Speed" or "GPS Speed" column.')
+
+    # Validate everything we mapped exists
+    missing = [friendly for friendly, col in mapping.items() if col not in available]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}\nAvailable: {sorted(available)}")
+
+    return mapping
+
+
+# -----------------------------------------------------------------------------
+# Cursor helpers
+# -----------------------------------------------------------------------------
+def nearest_index(x: float, x_arr: np.ndarray) -> int:
+    """
+    Return the index of the nearest sample in x_arr to the value x.
+
+    We use np.searchsorted(), which is efficient if x_arr is sorted ascending.
+    timestamp should be sorted in your log.
+
+    Example:
+      x_arr = [0.0, 1.5, 2.5, 3.5]
+      x = 2.7  -> nearest is 2.5 (index 2)
+    """
+    i = int(np.searchsorted(x_arr, x))
+
+    # Clamp to valid bounds
+    if i <= 0:
+        return 0
+    if i >= len(x_arr):
+        return len(x_arr) - 1
+
+    # Pick whichever of i-1 or i is closer
+    return i if (x_arr[i] - x) < (x - x_arr[i - 1]) else (i - 1)
+
+
+# -----------------------------------------------------------------------------
+# Main plotting routine
+# -----------------------------------------------------------------------------
+def main() -> None:
+    # Use the script's directory as the starting folder for the dialog.
+    script_dir = Path(__file__).resolve().parent
+
+    # Pop up file picker so you don't have to hardcode filenames.
+    csv_path = pick_csv_file(script_dir)
+
+    # Read log (auto-skipping metadata) and resolve column-name differences.
+    df = read_jb4_csv(csv_path)
+    colmap = resolve_columns(df)
+
+    # Convert timestamp to numpy array (faster operations in cursor callback)
+    t = df["timestamp"].to_numpy(dtype=float)
+    if len(t) == 0:
+        raise ValueError("No data rows found after parsing CSV.")
+
+    # Create stacked subplots sharing the same x-axis.
+    # sharex=True is what "locks" x-zoom/pan together across all subplots.
+    n = len(PLOTS)
+    fig, axes = plt.subplots(nrows=n, ncols=1, sharex=True, figsize=(12, 2.0 * n))
+    fig.suptitle(f"JB4 Log: {csv_path.name}", y=0.995)
+
+    # If there's only one subplot, matplotlib returns a single Axes, not a list.
+    if n == 1:
+        axes = [axes]
+
+    # We'll store each plotted y-series so the cursor can quickly grab y[idx].
+    y_series: list[np.ndarray] = []
+
+    # Plot each channel in its own subplot with its own y-limits.
+    for ax, (friendly_name, y_label, y_lim) in zip(axes, PLOTS):
+        col = colmap.get(friendly_name, friendly_name)
+
+        # Convert data to numeric. Non-numeric becomes NaN.
+        y = pd.to_numeric(df[col], errors="coerce").to_numpy(dtype=float)
+        y_series.append(y)
+
+        ax.plot(t, y, label=friendly_name)
+        ax.set_ylabel(y_label)
+        ax.set_ylim(*y_lim)
+        ax.grid(True, linewidth=0.5, alpha=0.5)
+        ax.legend(loc="upper right")
+
+    axes[-1].set_xlabel("Time (s)")
+
+    # -------------------------------------------------------------------------
+    # Add interactive cursor: vertical line across all plots + point markers.
+    # -------------------------------------------------------------------------
+    # One vertical line per axis so the cursor appears in every subplot.
+    # Initially invisible until mouse moves inside plots.
+    vlines = [ax.axvline(t[0], linewidth=1.0, alpha=0.7, visible=False) for ax in axes]
+
+    # One marker per subplot (a small dot) at the nearest data sample.
+    markers = [
+        ax.plot([], [], marker="o", markersize=4, linestyle="None", visible=False)[0]
+        for ax in axes
+    ]
+
+    # A small info readout in the bottom-left of the figure.
+    # You can expand this later to show all channel values at the cursor.
+    info_text = fig.text(0.01, 0.01, "", ha="left", va="bottom")
+
+    def on_move(event) -> None:
+        """
+        Mouse-move callback.
+        event.xdata is the x-value in data coordinates (timestamp seconds) for the axis under the mouse.
+        """
+        # If mouse isn't over an axes, do nothing.
+        if event.inaxes is None or event.xdata is None:
+            return
+
+        x = float(event.xdata)
+
+        # If cursor moves outside the data time range, hide cursor artifacts.
+        if x < t[0] or x > t[-1]:
+            for vl in vlines:
+                vl.set_visible(False)
+            for mk in markers:
+                mk.set_visible(False)
+            info_text.set_text("")
+            fig.canvas.draw_idle()
+            return
+
+        # Snap cursor to nearest real timestamp sample
+        idx = nearest_index(x, t)
+        x_snap = t[idx]
+
+        # Move the vertical line in every subplot
+        for vl in vlines:
+            vl.set_xdata([x_snap, x_snap])
+            vl.set_visible(True)
+
+        # Move each marker to the (time, value) point for that subplot
+        for mk, y in zip(markers, y_series):
+            mk.set_data([x_snap], [y[idx]])
+            mk.set_visible(True)
+
+        info_text.set_text(f"t = {x_snap:.2f} s   (index {idx})")
+        fig.canvas.draw_idle()  # request a redraw without blocking
+
+    def on_leave(_event) -> None:
+        """
+        When mouse leaves the figure window, hide cursor artifacts.
+        """
+        for vl in vlines:
+            vl.set_visible(False)
+        for mk in markers:
+            mk.set_visible(False)
+        info_text.set_text("")
+        fig.canvas.draw_idle()
+
+    # Connect callbacks to matplotlib's event system
+    fig.canvas.mpl_connect("motion_notify_event", on_move)
+    fig.canvas.mpl_connect("figure_leave_event", on_leave)
+
+    # Layout and show
+    plt.tight_layout()
+    plt.show()
+
+
+if __name__ == "__main__":
+    main()
