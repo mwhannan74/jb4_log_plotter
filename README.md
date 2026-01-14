@@ -255,6 +255,16 @@ pyqt5
 
 ---
 
+## Building an Installer
+From your activated venv that you were building and testing your code, run the following commands. 
+Then go into the dist folder and zip up that folder. You distribute the zip file.
+### Windows
+pyinstaller --noconfirm --clean --name JB4LogPlotter-win --windowed jb4_log_plotter.py
+### Linux
+pyinstaller --noconfirm --clean --name JB4LogPlotter-linux --windowed jb4_log_plotter.py
+
+---
+
 ## Disclaimer
 
 This script is provided as a utility for viewing and analyzing JB4 logs. Validate any conclusions with appropriate tuning knowledge and safe testing practices.
