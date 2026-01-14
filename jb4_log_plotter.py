@@ -234,7 +234,7 @@ def nearest_index(x: float, x_arr: np.ndarray) -> int:
     if i >= len(x_arr):
         return len(x_arr) - 1
 
-    # Pick whichever of i-1 or i is closer
+    # Pick whichever of i-1 and i is closer
     return i if (x_arr[i] - x) < (x - x_arr[i - 1]) else (i - 1)
 
 
@@ -270,15 +270,35 @@ def main() -> None:
     # We'll store each plotted y-series so the cursor can quickly grab y[idx].
     y_series: list[np.ndarray] = []
 
+    # Store extra series for the Boost subplot (Boost2 and Target)
+    boost_ax_index: int | None = None
+    boost_extra_series: list[tuple[str, np.ndarray]] = []
+
     # Plot each channel in its own subplot with its own y-limits.
-    for ax, (friendly_name, y_label, y_lim) in zip(axes, PLOTS):
+    for ax_i, (ax, (friendly_name, y_label, y_lim)) in enumerate(zip(axes, PLOTS)):
         col = colmap.get(friendly_name, friendly_name)
 
         # Convert data to numeric. Non-numeric becomes NaN.
         y = pd.to_numeric(df[col], errors="coerce").to_numpy(dtype=float)
         y_series.append(y)
 
-        ax.plot(t, y, label=friendly_name)
+        # Special case: Boost plot gets two additional lines (Boost2 and Target)
+        if friendly_name == "Boost":
+            boost_ax_index = ax_i
+
+            # Plot Boost, Boost2, Target with distinct line colors
+            ax.plot(t, y, label="Boost", color="C0")
+
+            y_boost2 = pd.to_numeric(df["Boost2"], errors="coerce").to_numpy(dtype=float)
+            ax.plot(t, y_boost2, label="Boost2", color="C1")
+            boost_extra_series.append(("Boost2", y_boost2))
+
+            y_target = pd.to_numeric(df["Target"], errors="coerce").to_numpy(dtype=float)
+            ax.plot(t, y_target, label="Target", color="C2")
+            boost_extra_series.append(("Target", y_target))
+        else:
+            ax.plot(t, y, label=friendly_name)
+
         ax.set_ylabel(y_label)
         ax.set_ylim(*y_lim)
         ax.grid(True, linewidth=0.5, alpha=0.5)
@@ -318,6 +338,35 @@ def main() -> None:
         for ax in axes
     ]
 
+    # Extra markers + labels for the Boost subplot (Boost2 and Target)
+    boost_extra_markers: list[plt.Line2D] = []
+    boost_extra_labels: list[plt.Annotation] = []
+    if boost_ax_index is not None and boost_extra_series:
+        boost_ax = axes[boost_ax_index]
+
+        boost_extra_markers = [
+            boost_ax.plot([], [], marker="o", markersize=4, linestyle="None", visible=False)[0]
+            for _name, _y in boost_extra_series
+        ]
+
+        # Use annotate() so label placement can be specified in screen-pixel offsets.
+        # This prevents overlap when Boost/Boost2/Target values are close together.
+        boost_extra_labels = [
+            boost_ax.annotate(
+                text="",
+                xy=(0.0, 0.0),          # will be updated on mouse move
+                xytext=(10, 0),         # (dx, dy) in offset points; dy will be updated per series
+                textcoords="offset points",
+                ha="left",
+                va="center",
+                fontsize=9,
+                bbox=dict(boxstyle="round,pad=0.2", alpha=0.7),
+                visible=False,
+            )
+            for _name, _y in boost_extra_series
+        ]
+
+
     # A small info readout in the bottom-left of the figure.
     # You can expand this later to show all channel values at the cursor.
     info_text = fig.text(0.01, 0.01, "", ha="left", va="bottom")
@@ -340,6 +389,10 @@ def main() -> None:
             for mk in markers:
                 mk.set_visible(False)
             for lbl in value_labels:
+                lbl.set_visible(False)
+            for mk in boost_extra_markers:
+                mk.set_visible(False)
+            for lbl in boost_extra_labels:
                 lbl.set_visible(False)
             info_text.set_text("")
             fig.canvas.draw_idle()
@@ -380,6 +433,39 @@ def main() -> None:
             lbl.set_position((x_snap + x_offset, y_val))
             lbl.set_visible(True)
 
+        # Update Boost subplot extra markers/labels (Boost2 and Target)
+        if boost_ax_index is not None and boost_extra_series:
+            # Stack labels vertically (in screen space) so they remain readable even when
+            # the underlying y-values are very close.
+            #
+            # Offsets are in "points" (1/72 inch). Tune these if you want more/less spacing.
+            y_offsets_pts = [14, 0, -14]
+
+            for j, ((name, y_arr), mk, lbl) in enumerate(
+                zip(boost_extra_series, boost_extra_markers, boost_extra_labels),
+                start=0,
+            ):
+                y_val = y_arr[idx]
+
+                mk.set_data([x_snap], [y_val])
+                mk.set_visible(True)
+
+                if np.isfinite(y_val) and abs(y_val - round(y_val)) < 1e-9:
+                    text = f"{name}: {int(round(y_val))}"
+                else:
+                    text = f"{name}: {y_val:.2f}"
+
+                lbl.set_text(text)
+
+                # Attach the annotation to the dot position...
+                lbl.xy = (x_snap, y_val)
+
+                # ...then offset the text in screen space so labels don't overlap.
+                dy = y_offsets_pts[j] if j < len(y_offsets_pts) else (14 - 14 * j)
+                lbl.set_position((10, dy))  # (dx, dy) in offset points
+                lbl.set_visible(True)
+
+
         info_text.set_text(f"t = {x_snap:.2f} s   (index {idx})")
         fig.canvas.draw_idle()  # request a redraw without blocking
 
@@ -392,6 +478,10 @@ def main() -> None:
         for mk in markers:
             mk.set_visible(False)
         for lbl in value_labels:
+            lbl.set_visible(False)
+        for mk in boost_extra_markers:
+            mk.set_visible(False)
+        for lbl in boost_extra_labels:
             lbl.set_visible(False)
         info_text.set_text("")
         fig.canvas.draw_idle()
