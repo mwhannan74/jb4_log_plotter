@@ -4,6 +4,8 @@ A lightweight Python script for plotting **JB4 tuner CSV logs** with a fast, int
 
 This code was built using logs from a 2021 Kia Stinger (Kia & Hyundai Turbo). Assumption is that log files across different brands use same file format and parameters.
 
+**You can find a prebuilt version for both Windows and Linux in the Releases section of the GitHub repo back (look on righthand side).**
+
 # JB4 Map Guide
 
 https://www.jb4tech.com/forum/model-specific-engine-tuning-modification-discussion/kia-hyundai-turbo/20722-kia-hyundai-jb4
