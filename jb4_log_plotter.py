@@ -1,4 +1,5 @@
-"""
+#!/usr/bin/env python3
+r"""
 JB4 log plotter (Kia Stinger GT)
 
 What this script does:
