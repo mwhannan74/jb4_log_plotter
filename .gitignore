@@ -23,6 +23,7 @@ dist/
 .eggs/
 wheels/
 pip-log.txt
+*.spec
 
 # ----------------------------
 # Test / coverage / tooling
