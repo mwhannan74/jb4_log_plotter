@@ -53,6 +53,13 @@ PLOTS = [
     ("Speed", "Speed (mph)", (0, 120)),
 ]
 
+# -----------------------------------------------------------------------------
+# Timestamp fix (manual on/off)
+# -----------------------------------------------------------------------------
+# Some JB4 logs appear to have timestamp scaled by 10x (e.g., 1676.74 should be 167.674).
+# Set to False if firmware/log format is corrected in the future.
+FIX_TIMESTAMP_SCALE = True
+TIMESTAMP_SCALE = 0.1  # multiply timestamps by this (0.1 == divide by 10)
 
 # -----------------------------------------------------------------------------
 # File picker
@@ -162,6 +169,10 @@ def read_jb4_csv(csv_path: Path) -> pd.DataFrame:
 
     # Drop any rows without a valid timestamp
     df = df.dropna(subset=["timestamp"]).reset_index(drop=True)
+
+    # Optional manual timestamp scaling fix (see FIX_TIMESTAMP_SCALE near the top of the file)
+    if FIX_TIMESTAMP_SCALE:
+        df["timestamp"] = df["timestamp"] * TIMESTAMP_SCALE
 
     return df
 
@@ -279,6 +290,9 @@ def main() -> None:
     afr_ax_index: int | None = None
     afr_extra_series: list[tuple[str, np.ndarray]] = []
 
+    speed_ax_index: int | None = None
+    speed_extra_series: list[tuple[str, np.ndarray]] = []
+
     # Plot each channel in its own subplot with its own y-limits.
     for ax_i, (ax, (friendly_name, y_label, y_lim)) in enumerate(zip(axes, PLOTS)):
         col = colmap.get(friendly_name, friendly_name)
@@ -319,6 +333,15 @@ def main() -> None:
             y_afr2 = pd.to_numeric(df["AFR2"], errors="coerce").to_numpy(dtype=float)
             ax.plot(t, y_afr2, label="AFR2", color="C1")
             afr_extra_series.append(("AFR2", y_afr2))
+
+        elif friendly_name == "Speed":
+            speed_ax_index = ax_i
+
+            ax.plot(t, y, label="Speed", color="C0")
+
+            y_gps_speed = pd.to_numeric(df["GPS Speed"], errors="coerce").to_numpy(dtype=float)
+            ax.plot(t, y_gps_speed, label="GPS Speed", color="C1")
+            speed_extra_series.append(("GPS Speed", y_gps_speed))
 
         else:
             ax.plot(t, y, label=friendly_name)
@@ -440,6 +463,31 @@ def main() -> None:
             for _name, _y in afr_extra_series
         ]
 
+    speed_extra_markers: list[plt.Line2D] = []
+    speed_extra_labels: list[plt.Annotation] = []
+    if speed_ax_index is not None and speed_extra_series:
+        speed_ax = axes[speed_ax_index]
+
+        speed_extra_markers = [
+            speed_ax.plot([], [], marker="o", markersize=4, linestyle="None", visible=False)[0]
+            for _name, _y in speed_extra_series
+        ]
+
+        speed_extra_labels = [
+            speed_ax.annotate(
+                text="",
+                xy=(0.0, 0.0),
+                xytext=(10, 0),
+                textcoords="offset points",
+                ha="left",
+                va="center",
+                fontsize=9,
+                bbox=dict(boxstyle="round,pad=0.2", alpha=0.7),
+                visible=False,
+            )
+            for _name, _y in speed_extra_series
+        ]
+
 
     # A small info readout in the bottom-left of the figure.
     # You can expand this later to show all channel values at the cursor.
@@ -475,6 +523,10 @@ def main() -> None:
             for mk in afr_extra_markers:
                 mk.set_visible(False)
             for lbl in afr_extra_labels:
+                lbl.set_visible(False)
+            for mk in speed_extra_markers:
+                mk.set_visible(False)
+            for lbl in speed_extra_labels:
                 lbl.set_visible(False)
             info_text.set_text("")
             fig.canvas.draw_idle()
@@ -589,6 +641,29 @@ def main() -> None:
                 lbl.set_position((10, dy))  # (dx, dy) in offset points
                 lbl.set_visible(True)
 
+        if speed_ax_index is not None and speed_extra_series:
+            y_offsets_pts = [14]
+
+            for j, ((name, y_arr), mk, lbl) in enumerate(
+                zip(speed_extra_series, speed_extra_markers, speed_extra_labels),
+                start=0,
+            ):
+                y_val = y_arr[idx]
+
+                mk.set_data([x_snap], [y_val])
+                mk.set_visible(True)
+
+                if np.isfinite(y_val) and abs(y_val - round(y_val)) < 1e-9:
+                    text = f"{name}: {int(round(y_val))}"
+                else:
+                    text = f"{name}: {y_val:.2f}"
+
+                lbl.set_text(text)
+                lbl.xy = (x_snap, y_val)
+                dy = y_offsets_pts[j] if j < len(y_offsets_pts) else (14 - 14 * j)
+                lbl.set_position((10, dy))  # (dx, dy) in offset points
+                lbl.set_visible(True)
+
 
         info_text.set_text(f"t = {x_snap:.2f} s   (index {idx})")
         fig.canvas.draw_idle()  # request a redraw without blocking
@@ -614,6 +689,10 @@ def main() -> None:
         for mk in afr_extra_markers:
             mk.set_visible(False)
         for lbl in afr_extra_labels:
+            lbl.set_visible(False)
+        for mk in speed_extra_markers:
+            mk.set_visible(False)
+        for lbl in speed_extra_labels:
             lbl.set_visible(False)
         info_text.set_text("")
         fig.canvas.draw_idle()
