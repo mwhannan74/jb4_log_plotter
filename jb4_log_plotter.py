@@ -40,14 +40,23 @@ import matplotlib.pyplot as plt
 # Plot configuration
 # -----------------------------------------------------------------------------
 # Each tuple: (Friendly name we want to plot, y-axis label, y-axis limits)
+#
+# How to customize plots:
+# - Reordering: The plots are created top-to-bottom in the same order as this list.
+#   To move a plot up/down, just move its tuple earlier/later in the list.
+#
+# - Y-axis range (min/max): The third item in each tuple is (y_min, y_max).
+#   Adjust these values to control the visible range for that subplot.
+#   Example: ("Boost", "Boost (psi)", (0, 30)) expands the Boost axis to 0–30 psi.
+#
 # Notes:
 # - Your JB4 log may store Boost as either "Boost" or "ECU Boost".
 # - Speed may show up as "Speed" or "GPS Speed".
 #   We handle these differences in resolve_columns().
 PLOTS = [
-    ("RPM", "RPM", (0, 7000)),
-    ("Boost", "Boost (psi)", (0, 25)),
     ("Pedal", "Pedal / Throttle (%)", (0, 110)),
+    ("RPM", "RPM", (0, 7000)),
+    ("Boost", "Boost (psi)", (0, 25)),    
     ("AFR", "AFR", (10, 22)),
     ("IAT", "IAT (°F)", (0, 160)),
     ("Speed", "Speed (mph)", (0, 120)),
@@ -352,6 +361,12 @@ def main() -> None:
         ax.legend(loc="upper right")
 
     axes[-1].set_xlabel("Time (s)")
+
+    # Remove the left-side x padding (negative time), but keep the right-side padding
+    # by only locking the left limit and leaving the right limit unchanged.
+    for ax in axes:
+        ax.set_xlim(left=t[0])
+
 
     # -------------------------------------------------------------------------
     # Add interactive cursor: vertical line across all plots + point markers.
