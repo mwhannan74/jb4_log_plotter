@@ -276,6 +276,9 @@ def main() -> None:
     pedal_ax_index: int | None = None
     pedal_extra_series: list[tuple[str, np.ndarray]] = []
 
+    afr_ax_index: int | None = None
+    afr_extra_series: list[tuple[str, np.ndarray]] = []
+
     # Plot each channel in its own subplot with its own y-limits.
     for ax_i, (ax, (friendly_name, y_label, y_lim)) in enumerate(zip(axes, PLOTS)):
         col = colmap.get(friendly_name, friendly_name)
@@ -307,6 +310,15 @@ def main() -> None:
             y_throttle = pd.to_numeric(df["Throttle"], errors="coerce").to_numpy(dtype=float)
             ax.plot(t, y_throttle, label="Throttle", color="C1")
             pedal_extra_series.append(("Throttle", y_throttle))
+
+        elif friendly_name == "AFR":
+            afr_ax_index = ax_i
+
+            ax.plot(t, y, label="AFR", color="C0")
+
+            y_afr2 = pd.to_numeric(df["AFR2"], errors="coerce").to_numpy(dtype=float)
+            ax.plot(t, y_afr2, label="AFR2", color="C1")
+            afr_extra_series.append(("AFR2", y_afr2))
 
         else:
             ax.plot(t, y, label=friendly_name)
@@ -403,6 +415,31 @@ def main() -> None:
             for _name, _y in pedal_extra_series
         ]
 
+    afr_extra_markers: list[plt.Line2D] = []
+    afr_extra_labels: list[plt.Annotation] = []
+    if afr_ax_index is not None and afr_extra_series:
+        afr_ax = axes[afr_ax_index]
+
+        afr_extra_markers = [
+            afr_ax.plot([], [], marker="o", markersize=4, linestyle="None", visible=False)[0]
+            for _name, _y in afr_extra_series
+        ]
+
+        afr_extra_labels = [
+            afr_ax.annotate(
+                text="",
+                xy=(0.0, 0.0),
+                xytext=(10, 0),
+                textcoords="offset points",
+                ha="left",
+                va="center",
+                fontsize=9,
+                bbox=dict(boxstyle="round,pad=0.2", alpha=0.7),
+                visible=False,
+            )
+            for _name, _y in afr_extra_series
+        ]
+
 
     # A small info readout in the bottom-left of the figure.
     # You can expand this later to show all channel values at the cursor.
@@ -434,6 +471,10 @@ def main() -> None:
             for mk in pedal_extra_markers:
                 mk.set_visible(False)
             for lbl in pedal_extra_labels:
+                lbl.set_visible(False)
+            for mk in afr_extra_markers:
+                mk.set_visible(False)
+            for lbl in afr_extra_labels:
                 lbl.set_visible(False)
             info_text.set_text("")
             fig.canvas.draw_idle()
@@ -525,6 +566,29 @@ def main() -> None:
                 lbl.set_position((10, dy))  # (dx, dy) in offset points
                 lbl.set_visible(True)
 
+        if afr_ax_index is not None and afr_extra_series:
+            y_offsets_pts = [14]
+
+            for j, ((name, y_arr), mk, lbl) in enumerate(
+                zip(afr_extra_series, afr_extra_markers, afr_extra_labels),
+                start=0,
+            ):
+                y_val = y_arr[idx]
+
+                mk.set_data([x_snap], [y_val])
+                mk.set_visible(True)
+
+                if np.isfinite(y_val) and abs(y_val - round(y_val)) < 1e-9:
+                    text = f"{name}: {int(round(y_val))}"
+                else:
+                    text = f"{name}: {y_val:.2f}"
+
+                lbl.set_text(text)
+                lbl.xy = (x_snap, y_val)
+                dy = y_offsets_pts[j] if j < len(y_offsets_pts) else (14 - 14 * j)
+                lbl.set_position((10, dy))  # (dx, dy) in offset points
+                lbl.set_visible(True)
+
 
         info_text.set_text(f"t = {x_snap:.2f} s   (index {idx})")
         fig.canvas.draw_idle()  # request a redraw without blocking
@@ -546,6 +610,10 @@ def main() -> None:
         for mk in pedal_extra_markers:
             mk.set_visible(False)
         for lbl in pedal_extra_labels:
+            lbl.set_visible(False)
+        for mk in afr_extra_markers:
+            mk.set_visible(False)
+        for lbl in afr_extra_labels:
             lbl.set_visible(False)
         info_text.set_text("")
         fig.canvas.draw_idle()
