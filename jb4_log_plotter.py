@@ -298,6 +298,8 @@ def main() -> None:
     # We'll store each plotted y-series so the cursor can quickly grab y[idx].
     y_series: list[np.ndarray] = []
 
+    y_colors: list[str] = []
+
     # Store extra series for the Boost subplot (Boost2 and Target)
     boost_ax_index: int | None = None
     boost_extra_series: list[tuple[str, np.ndarray]] = []
@@ -314,6 +316,12 @@ def main() -> None:
     rpm_ax_index: int | None = None
     rpm_extra_series: list[tuple[str, np.ndarray]] = []
 
+    boost_extra_colors: list[str] = []
+    pedal_extra_colors: list[str] = []
+    afr_extra_colors: list[str] = []
+    speed_extra_colors: list[str] = []
+    rpm_extra_colors: list[str] = []
+
     # Plot each channel in its own subplot with its own y-limits.
     for ax_i, (ax, (friendly_name, y_label, y_lim)) in enumerate(zip(axes, PLOTS)):
         col = colmap.get(friendly_name, friendly_name)
@@ -327,54 +335,66 @@ def main() -> None:
             boost_ax_index = ax_i
 
             # Plot Boost, Boost2, Target with distinct line colors
-            ax.plot(t, y, label="Boost", color="C0")
+            line_boost = ax.plot(t, y, label="Boost", color="C0")[0]
+            y_colors.append(line_boost.get_color())
 
             y_boost2 = pd.to_numeric(df["Boost2"], errors="coerce").to_numpy(dtype=float)
-            ax.plot(t, y_boost2, label="Boost2", color="C1")
+            line_boost2 = ax.plot(t, y_boost2, label="Boost2", color="C1")[0]
             boost_extra_series.append(("Boost2", y_boost2))
+            boost_extra_colors.append(line_boost2.get_color())
 
             y_target = pd.to_numeric(df["Target"], errors="coerce").to_numpy(dtype=float)
-            ax.plot(t, y_target, label="Target", color="C2")
+            line_target = ax.plot(t, y_target, label="Target", color="C2")[0]
             boost_extra_series.append(("Target", y_target))
+            boost_extra_colors.append(line_target.get_color())
 
         elif friendly_name == "Pedal":
             pedal_ax_index = ax_i
 
-            ax.plot(t, y, label="Pedal", color="C0")
+            line_pedal = ax.plot(t, y, label="Pedal", color="C0")[0]
+            y_colors.append(line_pedal.get_color())
 
             y_throttle = pd.to_numeric(df["Throttle"], errors="coerce").to_numpy(dtype=float)
-            ax.plot(t, y_throttle, label="Throttle", color="C1")
+            line_throttle = ax.plot(t, y_throttle, label="Throttle", color="C1")[0]
             pedal_extra_series.append(("Throttle", y_throttle))
+            pedal_extra_colors.append(line_throttle.get_color())
 
         elif friendly_name == "AFR":
             afr_ax_index = ax_i
 
-            ax.plot(t, y, label="AFR", color="C0")
+            line_afr = ax.plot(t, y, label="AFR", color="C0")[0]
+            y_colors.append(line_afr.get_color())
 
             y_afr2 = pd.to_numeric(df["AFR2"], errors="coerce").to_numpy(dtype=float)
-            ax.plot(t, y_afr2, label="AFR2", color="C1")
+            line_afr2 = ax.plot(t, y_afr2, label="AFR2", color="C1")[0]
             afr_extra_series.append(("AFR2", y_afr2))
+            afr_extra_colors.append(line_afr2.get_color())
 
         elif friendly_name == "Speed":
             speed_ax_index = ax_i
 
-            ax.plot(t, y, label="Speed", color="C0")
+            line_speed = ax.plot(t, y, label="Speed", color="C0")[0]
+            y_colors.append(line_speed.get_color())
 
             y_gps_speed = pd.to_numeric(df["GPS Speed"], errors="coerce").to_numpy(dtype=float)
-            ax.plot(t, y_gps_speed, label="GPS Speed", color="C1")
+            line_gps_speed = ax.plot(t, y_gps_speed, label="GPS Speed", color="C1")[0]
             speed_extra_series.append(("GPS Speed", y_gps_speed))
+            speed_extra_colors.append(line_gps_speed.get_color())
 
         elif friendly_name == "RPM":
             rpm_ax_index = ax_i
 
-            ax.plot(t, y, label="RPM", color="C0")
+            line_rpm = ax.plot(t, y, label="RPM", color="C0")[0]
+            y_colors.append(line_rpm.get_color())
 
             y_gear_scaled = pd.to_numeric(df["GEAR"], errors="coerce").to_numpy(dtype=float) * GEAR_SCALE
-            ax.plot(t, y_gear_scaled, label=f"GEAR x{GEAR_SCALE:g}", color="C1")
+            line_gear = ax.plot(t, y_gear_scaled, label=f"GEAR x{GEAR_SCALE:g}", color="C1")[0]
             rpm_extra_series.append(("GEAR", y_gear_scaled))
+            rpm_extra_colors.append(line_gear.get_color())
 
         else:
-            ax.plot(t, y, label=friendly_name)
+            line_main = ax.plot(t, y, label=friendly_name)[0]
+            y_colors.append(line_main.get_color())
 
         ax.set_ylabel(y_label)
         ax.set_ylim(*y_lim)
@@ -554,6 +574,14 @@ def main() -> None:
     # You can expand this later to show all channel values at the cursor.
     info_text = fig.text(0.01, 0.01, "", ha="left", va="bottom")
 
+    def apply_label_color(text_obj, color: str) -> None:
+        text_obj.set_color(color)
+        patch = text_obj.get_bbox_patch()
+        if patch is not None:
+            patch.set_edgecolor(color)
+            patch.set_facecolor(color)
+            patch.set_alpha(0.25)
+
     def on_move(event) -> None:
         """
         Mouse-move callback.
@@ -613,7 +641,7 @@ def main() -> None:
 
         # Move each marker to the (time, value) point for that subplot,
         # and update the corresponding text label to display the Y-value.
-        for (mk, y, lbl, (friendly_name, _y_label, _y_lim)) in zip(markers, y_series, value_labels, PLOTS):
+        for (mk, y, lbl, (friendly_name, _y_label, _y_lim), c) in zip(markers, y_series, value_labels, PLOTS, y_colors):
             y_val = y[idx]
 
             mk.set_data([x_snap], [y_val])
@@ -631,6 +659,7 @@ def main() -> None:
             lbl.set_text(text)
             lbl.set_position((x_snap + x_offset, y_val))
             lbl.set_visible(True)
+            apply_label_color(lbl, c)
 
         # Update Boost subplot extra markers/labels (Boost2 and Target)
         if boost_ax_index is not None and boost_extra_series:
@@ -640,8 +669,8 @@ def main() -> None:
             # Offsets are in "points" (1/72 inch). Tune these if you want more/less spacing.
             y_offsets_pts = [14, 0, -14]
 
-            for j, ((name, y_arr), mk, lbl) in enumerate(
-                zip(boost_extra_series, boost_extra_markers, boost_extra_labels),
+            for j, ((name, y_arr), mk, lbl, c) in enumerate(
+                zip(boost_extra_series, boost_extra_markers, boost_extra_labels, boost_extra_colors),
                 start=0,
             ):
                 y_val = y_arr[idx]
@@ -655,6 +684,7 @@ def main() -> None:
                     text = f"{name}: {y_val:.2f}"
 
                 lbl.set_text(text)
+                apply_label_color(lbl, c)
                 lbl.xy = (x_snap, y_val)
                 dy = y_offsets_pts[j] if j < len(y_offsets_pts) else (14 - 14 * j)
                 lbl.set_position((10, dy))  # (dx, dy) in offset points
@@ -663,8 +693,8 @@ def main() -> None:
         if pedal_ax_index is not None and pedal_extra_series:
             y_offsets_pts = [14]
 
-            for j, ((name, y_arr), mk, lbl) in enumerate(
-                zip(pedal_extra_series, pedal_extra_markers, pedal_extra_labels),
+            for j, ((name, y_arr), mk, lbl, c) in enumerate(
+                zip(pedal_extra_series, pedal_extra_markers, pedal_extra_labels, pedal_extra_colors),
                 start=0,
             ):
                 y_val = y_arr[idx]
@@ -678,6 +708,7 @@ def main() -> None:
                     text = f"{name}: {y_val:.2f}"
 
                 lbl.set_text(text)
+                apply_label_color(lbl, c)
                 lbl.xy = (x_snap, y_val)
                 dy = y_offsets_pts[j] if j < len(y_offsets_pts) else (14 - 14 * j)
                 lbl.set_position((10, dy))  # (dx, dy) in offset points
@@ -686,8 +717,8 @@ def main() -> None:
         if afr_ax_index is not None and afr_extra_series:
             y_offsets_pts = [14]
 
-            for j, ((name, y_arr), mk, lbl) in enumerate(
-                zip(afr_extra_series, afr_extra_markers, afr_extra_labels),
+            for j, ((name, y_arr), mk, lbl, c) in enumerate(
+                zip(afr_extra_series, afr_extra_markers, afr_extra_labels, afr_extra_colors),
                 start=0,
             ):
                 y_val = y_arr[idx]
@@ -701,6 +732,7 @@ def main() -> None:
                     text = f"{name}: {y_val:.2f}"
 
                 lbl.set_text(text)
+                apply_label_color(lbl, c)
                 lbl.xy = (x_snap, y_val)
                 dy = y_offsets_pts[j] if j < len(y_offsets_pts) else (14 - 14 * j)
                 lbl.set_position((10, dy))  # (dx, dy) in offset points
@@ -709,8 +741,8 @@ def main() -> None:
         if speed_ax_index is not None and speed_extra_series:
             y_offsets_pts = [14]
 
-            for j, ((name, y_arr), mk, lbl) in enumerate(
-                zip(speed_extra_series, speed_extra_markers, speed_extra_labels),
+            for j, ((name, y_arr), mk, lbl, c) in enumerate(
+                zip(speed_extra_series, speed_extra_markers, speed_extra_labels, speed_extra_colors),
                 start=0,
             ):
                 y_val = y_arr[idx]
@@ -724,6 +756,7 @@ def main() -> None:
                     text = f"{name}: {y_val:.2f}"
 
                 lbl.set_text(text)
+                apply_label_color(lbl, c)
                 lbl.xy = (x_snap, y_val)
                 dy = y_offsets_pts[j] if j < len(y_offsets_pts) else (14 - 14 * j)
                 lbl.set_position((10, dy))  # (dx, dy) in offset points
@@ -732,8 +765,8 @@ def main() -> None:
         if rpm_ax_index is not None and rpm_extra_series:
             y_offsets_pts = [14]
 
-            for j, ((name, y_arr), mk, lbl) in enumerate(
-                zip(rpm_extra_series, rpm_extra_markers, rpm_extra_labels),
+            for j, ((name, y_arr), mk, lbl, c) in enumerate(
+                zip(rpm_extra_series, rpm_extra_markers, rpm_extra_labels, rpm_extra_colors),
                 start=0,
             ):
                 y_val = y_arr[idx]
@@ -750,6 +783,7 @@ def main() -> None:
                     text = f"{name}: {gear_unscaled:.2f}"
 
                 lbl.set_text(text)
+                apply_label_color(lbl, c)
                 lbl.xy = (x_snap, y_val)
                 dy = y_offsets_pts[j] if j < len(y_offsets_pts) else (14 - 14 * j)
                 lbl.set_position((10, dy))  # (dx, dy) in offset points
