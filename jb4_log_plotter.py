@@ -72,6 +72,14 @@ FIX_TIMESTAMP_SCALE = True
 TIMESTAMP_SCALE = 0.1  # multiply timestamps by this (0.1 == divide by 10)
 
 # -----------------------------------------------------------------------------
+# Gear scaling (for overlay on RPM plot)
+# -----------------------------------------------------------------------------
+# GEAR is an int (typically 0-8). We scale it so it is visible on the RPM axis.
+# Example: 8 * 100 = 800 RPM-equivalent, which is easy to see near the bottom.
+GEAR_SCALE = 100.0  # multiply GEAR by this when overlaying on RPM
+
+
+# -----------------------------------------------------------------------------
 # File picker
 # -----------------------------------------------------------------------------
 def pick_csv_file(initial_dir: Path) -> Path:
@@ -303,6 +311,9 @@ def main() -> None:
     speed_ax_index: int | None = None
     speed_extra_series: list[tuple[str, np.ndarray]] = []
 
+    rpm_ax_index: int | None = None
+    rpm_extra_series: list[tuple[str, np.ndarray]] = []
+
     # Plot each channel in its own subplot with its own y-limits.
     for ax_i, (ax, (friendly_name, y_label, y_lim)) in enumerate(zip(axes, PLOTS)):
         col = colmap.get(friendly_name, friendly_name)
@@ -352,6 +363,15 @@ def main() -> None:
             y_gps_speed = pd.to_numeric(df["GPS Speed"], errors="coerce").to_numpy(dtype=float)
             ax.plot(t, y_gps_speed, label="GPS Speed", color="C1")
             speed_extra_series.append(("GPS Speed", y_gps_speed))
+
+        elif friendly_name == "RPM":
+            rpm_ax_index = ax_i
+
+            ax.plot(t, y, label="RPM", color="C0")
+
+            y_gear_scaled = pd.to_numeric(df["GEAR"], errors="coerce").to_numpy(dtype=float) * GEAR_SCALE
+            ax.plot(t, y_gear_scaled, label=f"GEAR x{GEAR_SCALE:g}", color="C1")
+            rpm_extra_series.append(("GEAR", y_gear_scaled))
 
         else:
             ax.plot(t, y, label=friendly_name)
@@ -504,6 +524,31 @@ def main() -> None:
             for _name, _y in speed_extra_series
         ]
 
+    rpm_extra_markers: list[plt.Line2D] = []
+    rpm_extra_labels: list[plt.Annotation] = []
+    if rpm_ax_index is not None and rpm_extra_series:
+        rpm_ax = axes[rpm_ax_index]
+
+        rpm_extra_markers = [
+            rpm_ax.plot([], [], marker="o", markersize=4, linestyle="None", visible=False)[0]
+            for _name, _y in rpm_extra_series
+        ]
+
+        rpm_extra_labels = [
+            rpm_ax.annotate(
+                text="",
+                xy=(0.0, 0.0),
+                xytext=(10, 0),
+                textcoords="offset points",
+                ha="left",
+                va="center",
+                fontsize=9,
+                bbox=dict(boxstyle="round,pad=0.2", alpha=0.7),
+                visible=False,
+            )
+            for _name, _y in rpm_extra_series
+        ]
+
 
     # A small info readout in the bottom-left of the figure.
     # You can expand this later to show all channel values at the cursor.
@@ -543,6 +588,10 @@ def main() -> None:
             for mk in speed_extra_markers:
                 mk.set_visible(False)
             for lbl in speed_extra_labels:
+                lbl.set_visible(False)
+            for mk in rpm_extra_markers:
+                mk.set_visible(False)
+            for lbl in rpm_extra_labels:
                 lbl.set_visible(False)
             info_text.set_text("")
             fig.canvas.draw_idle()
@@ -680,6 +729,32 @@ def main() -> None:
                 lbl.set_position((10, dy))  # (dx, dy) in offset points
                 lbl.set_visible(True)
 
+        if rpm_ax_index is not None and rpm_extra_series:
+            y_offsets_pts = [14]
+
+            for j, ((name, y_arr), mk, lbl) in enumerate(
+                zip(rpm_extra_series, rpm_extra_markers, rpm_extra_labels),
+                start=0,
+            ):
+                y_val = y_arr[idx]
+
+                mk.set_data([x_snap], [y_val])
+                mk.set_visible(True)
+
+                # For GEAR, show the original (unscaled) gear in the label for clarity
+                # while still plotting the scaled value on the RPM axis.
+                gear_unscaled = y_val / GEAR_SCALE if GEAR_SCALE != 0 else np.nan
+                if np.isfinite(gear_unscaled) and abs(gear_unscaled - round(gear_unscaled)) < 1e-9:
+                    text = f"{name}: {int(round(gear_unscaled))}"
+                else:
+                    text = f"{name}: {gear_unscaled:.2f}"
+
+                lbl.set_text(text)
+                lbl.xy = (x_snap, y_val)
+                dy = y_offsets_pts[j] if j < len(y_offsets_pts) else (14 - 14 * j)
+                lbl.set_position((10, dy))  # (dx, dy) in offset points
+                lbl.set_visible(True)
+
 
         info_text.set_text(f"t = {x_snap:.2f} s   (index {idx})")
         fig.canvas.draw_idle()  # request a redraw without blocking
@@ -709,6 +784,10 @@ def main() -> None:
         for mk in speed_extra_markers:
             mk.set_visible(False)
         for lbl in speed_extra_labels:
+            lbl.set_visible(False)
+        for mk in rpm_extra_markers:
+            mk.set_visible(False)
+        for lbl in rpm_extra_labels:
             lbl.set_visible(False)
         info_text.set_text("")
         fig.canvas.draw_idle()
