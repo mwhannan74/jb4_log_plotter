@@ -262,6 +262,9 @@ pyqt5
 ## Building an Installer
 From your activated venv that you were building and testing your code, run the following commands. 
 Then go into the dist folder and zip up that folder. You distribute the zip file.
+
+pip install pyinstaller
+
 ### Windows
 pyinstaller --noconfirm --clean --name JB4LogPlotter-win --windowed jb4_log_plotter.py
 ### Linux
