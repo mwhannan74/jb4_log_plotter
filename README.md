@@ -6,7 +6,7 @@ This code was built using logs from a 2021 Kia Stinger (Kia & Hyundai Turbo). As
 
 **You can find a prebuilt version for both Windows and Linux in the Releases section of the GitHub repo back (look on righthand side).**
 
-![Example](images/jb4_log_plotter_example.png)
+![Example](images/jb4_log_plotter_example2.png)
 
 # JB4 Map Guide
 
